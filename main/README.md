@@ -21,3 +21,15 @@ uvicorn app.main:app --reload
 ```
 
 Health check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+
+## Sync issues (batch)
+
+From `main/`, run the script to sync all repos in `REPOS_TO_SYNC`, or a single repo:
+
+```bash
+cd main
+python scripts/sync_repos.py
+python scripts/sync_repos.py --repo owner/repo
+```
+
+Optional Celery (Phase 1): install `celery` and `redis`, set `CELERY_BROKER_URL` in `.env`, then run a worker and enqueue `sync_repo_task(repo_owner, repo_name, full_sync=True)`.
