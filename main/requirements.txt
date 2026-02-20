@@ -1,0 +1,19 @@
+# Web
+fastapi
+uvicorn[standard]
+
+# Config & validation
+pydantic
+pydantic-settings
+
+# Database
+psycopg[binary]
+
+# GitHub & HTTP
+pygithub
+httpx
+python-dotenv
+
+# Optional 
+# celery
+# redis
