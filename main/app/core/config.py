@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     github_token: str = ""
     repos_to_sync: str = ""
 
+    # Embeddings: "sentence-transformers" (local) or "openai"
+    embedding_provider: str = "sentence-transformers"
+    embedding_model_name: str = "text-embedding-3-small"
+    openai_api_key: str = ""
+    embedding_dim: int = 384
+
     # Celery broker
     celery_broker_url: str = "redis://localhost:6379/0"  
 
