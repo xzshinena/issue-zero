@@ -14,6 +14,10 @@ pygithub
 httpx
 python-dotenv
 
-# Optional 
+# Embeddings (sentence-transformers for local; openai optional for API)
+sentence-transformers
+
+# Optional
+# openai
 # celery
 # redis

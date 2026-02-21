@@ -18,6 +18,7 @@ if _MAIN not in sys.path:
 
 from app.core.config import get_settings
 from app.ingestion.github import sync_repo, sync_repos_from_config
+from app.ingestion.pipeline import run_index_embeddings
 
 
 def main() -> int:
@@ -33,6 +34,11 @@ def main() -> int:
         "-q", "--quiet",
         action="store_true",
         help="Only print errors.",
+    )
+    parser.add_argument(
+        "--index",
+        action="store_true",
+        help="After sync, run embedding index (issue_embeddings).",
     )
     args = parser.parse_args()
 
@@ -53,6 +59,10 @@ def main() -> int:
             return 1
         if not args.quiet:
             print(f"{owner}/{repo_name}: {updated} issues upserted, {skipped} PRs skipped.")
+        if args.index:
+            issues_ok, emb_count = run_index_embeddings()
+            if not args.quiet:
+                print(f"Index: {issues_ok} issues, {emb_count} embeddings.")
         return 0
 
     settings = get_settings()
@@ -72,6 +82,10 @@ def main() -> int:
         for key, (updated, skipped) in results.items():
             print(f"{key}: {updated} issues upserted, {skipped} PRs skipped.")
         print(f"Done. {len(results)} repo(s) synced.")
+    if args.index:
+        issues_ok, emb_count = run_index_embeddings()
+        if not args.quiet:
+            print(f"Index: {issues_ok} issues, {emb_count} embeddings.")
     return 0
 
 

@@ -38,7 +38,7 @@ def main() -> int:
 
     settings = get_settings()
     migrations_dir = os.path.join(_MAIN, "migrations")
-    files = ["001_create_issues.sql", "003_issue_chunks.sql"]
+    files = ["001_create_issues.sql", "003_issue_chunks.sql", "004_issue_embeddings.sql"]
     if args.include_vector:
         files.insert(1, "002_pgvector.sql")
 

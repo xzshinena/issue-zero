@@ -108,6 +108,59 @@ def upsert_issue(conn: psycopg.Connection, issue: Issue) -> UUID:
         return id_val
 
 
+def get_issues_for_embedding(conn: psycopg.Connection) -> list[tuple[UUID, str, str, str, list[tuple[str, str]]]]:
+    """
+    Returns list of (issue_id, repo_owner, repo_name, text_full, [(chunk_id, content), ...])
+    for all issues that have non-empty text_full. Chunks loaded from issue_chunks.
+    """
+    out = []
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, repo_owner, repo_name, text_full
+            FROM issues
+            WHERE text_full IS NOT NULL AND text_full != ''
+            """
+        )
+        for row in cur.fetchall():
+            issue_id, repo_owner, repo_name, text_full = row[0], row[1], row[2], (row[3] or "").strip()
+            cur.execute(
+                "SELECT chunk_id, content FROM issue_chunks WHERE issue_id = %s ORDER BY chunk_index",
+                (issue_id,),
+            )
+            chunks = [(r[0], r[1] or "") for r in cur.fetchall()]
+            out.append((issue_id, repo_owner, repo_name, text_full, chunks))
+    return out
+
+
+def delete_issue_embeddings(conn: psycopg.Connection, issue_id: UUID) -> None:
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM issue_embeddings WHERE issue_id = %s", (issue_id,))
+
+
+def insert_issue_embedding(
+    conn: psycopg.Connection,
+    issue_id: UUID,
+    embedding: list[float],
+    repo_owner: str,
+    repo_name: str,
+    chunk_id: str | None = None,
+) -> None:
+    vector_str = "[" + ",".join(str(x) for x in embedding) + "]"
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO issue_embeddings (issue_id, chunk_id, embedding, repo_owner, repo_name)
+            VALUES (%s, %s, %s::vector, %s, %s)
+            ON CONFLICT (issue_id, chunk_id) DO UPDATE SET
+                embedding = EXCLUDED.embedding,
+                repo_owner = EXCLUDED.repo_owner,
+                repo_name = EXCLUDED.repo_name
+            """,
+            (issue_id, chunk_id, vector_str, repo_owner, repo_name),
+        )
+
+
 def row_to_issue(row: tuple) -> Issue:
     """Map a DB row to an Issue model. Row must be (id, source, ..., v2_component) in table order (omit embedding if present)."""
     return Issue(
