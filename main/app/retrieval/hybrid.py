@@ -185,7 +185,6 @@ def hybrid_search(
     Run BM25 + vector search, fuse with RRF, return top-N RetrievalHit objects
     sorted by RRF score (descending).
     """
-    should_close = conn is None
     if conn is None:
         ctx = get_conn()
         conn = ctx.__enter__()

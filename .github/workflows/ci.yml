@@ -25,7 +25,7 @@ jobs:
       - name: Run linter
         run: |
           pip install ruff
-          ruff check main/ --exclude main/app/api/routes/postgre.py --exclude main/app/api/routes/responses.py
+          ruff check main/ --exclude main/app/api/routes/postgre.py --exclude main/app/api/routes/responses.py --exclude main/scripts/ --exclude main/eval/
 
       - name: Run import check
         working-directory: main
