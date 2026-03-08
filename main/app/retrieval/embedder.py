@@ -15,12 +15,15 @@ class _SentenceTransformerEmbedder:
         self._settings = settings
         self._model = None
 
+    _ST_DEFAULT = "all-MiniLM-L6-v2"
+
     def _model_load(self):
         if self._model is None:
             from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(
-                self._settings.embedding_model_name or "all-MiniLM-L6-v2"
-            )
+            name = (self._settings.embedding_model_name or "").strip()
+            if not name or "openai" in name.lower() or name.startswith("text-embedding"):
+                name = self._ST_DEFAULT
+            self._model = SentenceTransformer(name)
         return self._model
 
     def embed(self, text: str) -> list[float]:

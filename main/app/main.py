@@ -1,14 +1,19 @@
 """Issue Zero API — cross-repo issue intelligence search engine."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.db import close_pool
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
 
 @asynccontextmanager
@@ -22,6 +27,13 @@ app = FastAPI(
     description="Cross-repo issue intelligence search engine",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -69,3 +81,6 @@ from app.api.routes.ingest import router as ingest_router  # noqa: E402
 
 app.include_router(search_router)
 app.include_router(ingest_router)
+
+if FRONTEND_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

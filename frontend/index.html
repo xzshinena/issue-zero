@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Issue Zero</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e10;
+      --surface: #1a1a1f;
+      --border: #2a2a30;
+      --text: #e4e4e7;
+      --text-dim: #8b8b96;
+      --accent: #6366f1;
+      --accent-hover: #818cf8;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    header span {
+      font-size: 12px;
+      color: var(--text-dim);
+      background: var(--surface);
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    .search-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    .search-section h2 {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+
+    .field { margin-bottom: 14px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-bottom: 6px;
+    }
+
+    textarea, input[type="text"], input[type="number"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--text);
+      font-size: 14px;
+      font-family: inherit;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    textarea:focus, input:focus {
+      border-color: var(--accent);
+    }
+
+    textarea { min-height: 100px; }
+
+    .row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .row .field { flex: 1; margin-bottom: 0; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+
+    button:hover { background: var(--accent-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .or-divider {
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+      margin: 8px 0;
+    }
+
+    #status {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin-top: 12px;
+      min-height: 20px;
+    }
+
+    .results { display: none; }
+    .results.visible { display: block; }
+
+    .pack-header {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+
+    .badge .label { color: var(--text-dim); }
+    .badge .value { font-weight: 600; }
+    .badge.critical .value { color: var(--red); }
+    .badge.high .value { color: var(--yellow); }
+    .badge.regression .value { color: var(--red); }
+
+    .issue-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 10px;
+      transition: border-color 0.15s;
+    }
+
+    .issue-card:hover { border-color: var(--accent); }
+
+    .issue-card .top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .issue-card .title {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .issue-card .title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .issue-card .title a:hover { color: var(--accent-hover); }
+
+    .issue-card .scores {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .score-pill {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .issue-card .snippet {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.5;
+      margin-top: 4px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--text-dim);
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Issue Zero</h1>
+  <span>intelligence search</span>
+</header>
+
+<div class="container">
+
+  <div class="search-section">
+    <h2>Search</h2>
+
+    <div class="field">
+      <label for="query">Paste a bug report or describe the issue</label>
+      <textarea id="query" placeholder="e.g. ICE: segfault in type checker when compiling generic code with lifetime bounds..."></textarea>
+    </div>
+
+    <div class="or-divider">or</div>
+
+    <div class="row">
+      <div class="field">
+        <label for="issue-url">GitHub issue URL</label>
+        <input type="text" id="issue-url" placeholder="https://github.com/owner/repo/issues/123">
+      </div>
+      <div class="field" style="max-width:120px">
+        <label for="limit">Results</label>
+        <input type="number" id="limit" value="10" min="1" max="50">
+      </div>
+      <button id="search-btn" onclick="doSearch()">Search</button>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <div id="results" class="results">
+    <div id="pack-header" class="pack-header"></div>
+    <div class="section-title">Similar issues</div>
+    <div id="issues-list"></div>
+  </div>
+
+  <div id="empty" class="empty-state">
+    Paste a bug report above and hit Search to get an intelligence pack.
+  </div>
+
+</div>
+
+<script>
+const API = window.location.origin;
+
+function el(id) { return document.getElementById(id); }
+
+function setStatus(msg) { el("status").textContent = msg; }
+
+function urgencyClass(u) {
+  if (u === "critical_bug") return "critical";
+  if (u === "high") return "high";
+  return "";
+}
+
+async function doSearch() {
+  const query = el("query").value.trim();
+  const issueUrl = el("issue-url").value.trim();
+  const limit = parseInt(el("limit").value, 10) || 10;
+
+  if (!query && !issueUrl) {
+    setStatus("Provide a query or issue URL.");
+    return;
+  }
+
+  const btn = el("search-btn");
+  btn.disabled = true;
+  setStatus("Searching...");
+  el("results").classList.remove("visible");
+  el("empty").style.display = "none";
+
+  const body = { limit };
+  if (query) body.query = query;
+  if (issueUrl) body.issue_url = issueUrl;
+
+  try {
+    const res = await fetch(`${API}/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setStatus(`Error ${res.status}: ${err.detail || res.statusText}`);
+      btn.disabled = false;
+      return;
+    }
+
+    const data = await res.json();
+    renderResults(data);
+    setStatus(`Found ${data.similar_issues.length} similar issues.`);
+  } catch (e) {
+    setStatus(`Network error: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderResults(data) {
+  const header = el("pack-header");
+  const p = data.predictions;
+
+  header.innerHTML = `
+    <div class="badge ${urgencyClass(p.urgency)}">
+      <span class="label">Urgency</span>
+      <span class="value">${p.urgency}</span>
+    </div>
+    <div class="badge">
+      <span class="label">Type</span>
+      <span class="value">${p.issue_type}</span>
+    </div>
+    <div class="badge">
+      <span class="label">Action</span>
+      <span class="value">${data.suggested_next_action}</span>
+    </div>
+    <div class="badge ${p.is_regression ? 'regression' : ''}">
+      <span class="label">Regression</span>
+      <span class="value">${p.is_regression ? "yes" : "no"}</span>
+    </div>
+  `;
+
+  const list = el("issues-list");
+
+  if (!data.similar_issues.length) {
+    list.innerHTML = `<div class="empty-state">No similar issues found.</div>`;
+    el("results").classList.add("visible");
+    return;
+  }
+
+  list.innerHTML = data.similar_issues.map(issue => `
+    <div class="issue-card">
+      <div class="top-row">
+        <div class="title">
+          <a href="${issue.url || '#'}" target="_blank" rel="noopener">${escHtml(issue.title || issue.id)}</a>
+        </div>
+        <div class="scores">
+          <span class="score-pill">RRF ${issue.score.toFixed(3)}</span>
+          <span class="score-pill">Rerank ${issue.rerank_score.toFixed(2)}</span>
+        </div>
+      </div>
+      <div class="snippet">${escHtml(issue.snippet)}</div>
+    </div>
+  `).join("");
+
+  el("results").classList.add("visible");
+}
+
+function escHtml(s) {
+  if (!s) return "";
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+el("query").addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") doSearch();
+});
+el("issue-url").addEventListener("keydown", e => {
+  if (e.key === "Enter") doSearch();
+});
+</script>
+
+</body>
+</html>
