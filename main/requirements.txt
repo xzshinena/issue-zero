@@ -6,6 +6,7 @@ uvicorn[standard]
 pydantic
 pydantic-settings
 
+# Database (PostgreSQL + pgvector)
 psycopg[pool]
 psycopg-binary
 
@@ -16,6 +17,13 @@ python-dotenv
 
 # Embeddings (sentence-transformers for local; openai optional for API)
 sentence-transformers
+
+# BM25 keyword retrieval
+rank_bm25
+
+# ML classifiers
+scikit-learn
+joblib
 
 # Optional
 # openai
