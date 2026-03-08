@@ -6,7 +6,7 @@ All URLs and issue IDs in the output MUST come from the retrieved set—no hallu
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.retrieval.reranker import RankedHit
 from app.ml.classifiers import predict_dict

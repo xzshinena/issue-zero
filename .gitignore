@@ -10,3 +10,7 @@ __pycache__/
 dist/
 build/
 docs/
+learning/
+/Users/shinena/dev/issue-zero/main/app/api/routes/chat_history.db
+/Users/shinena/dev/issue-zero/main/app/api/routes/postgre.py
+/Users/shinena/dev/issue-zero/main/app/api/routes/responses.py

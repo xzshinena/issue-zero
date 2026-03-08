@@ -9,8 +9,6 @@ Endpoints:
 from __future__ import annotations
 
 import re
-from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 

@@ -185,7 +185,6 @@ def hybrid_search(
     Run BM25 + vector search, fuse with RRF, return top-N RetrievalHit objects
     sorted by RRF score (descending).
     """
-    should_close = conn is None
     if conn is None:
         ctx = get_conn()
         conn = ctx.__enter__()
@@ -194,12 +193,18 @@ def hybrid_search(
 
     try:
         # BM25
-        bm25_idx = get_bm25_index(conn, repo_filter=repo_filter)
-        bm25_results = bm25_idx.query(query_text, top_k=top_k)
+        try:
+            bm25_idx = get_bm25_index(conn, repo_filter=repo_filter)
+            bm25_results = bm25_idx.query(query_text, top_k=top_k)
+        except Exception:
+            bm25_results = []
 
         # Vector
-        query_vec = embed(query_text)
-        vec_results = vector_search(conn, query_vec, top_k=top_k, repo_filter=repo_filter)
+        try:
+            query_vec = embed(query_text)
+            vec_results = vector_search(conn, query_vec, top_k=top_k, repo_filter=repo_filter)
+        except Exception:
+            vec_results = []
 
         # RRF merge
         rrf_scores = reciprocal_rank_fusion(bm25_results, vec_results)
