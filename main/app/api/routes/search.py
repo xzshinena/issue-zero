@@ -97,7 +97,7 @@ def _resolve_issue_url(url: str) -> tuple[str, str | None]:
 
 def _run_pipeline(query_text: str, repo: str | None, limit: int, query_issue_id: str | None = None) -> dict:
     """Full pipeline: hybrid search -> rerank -> pack."""
-    hits = hybrid_search(query_text, final_n=limit * 5, repo_filter=repo)
+    hits = hybrid_search(query_text, final_n=min(limit * 3, 20), repo_filter=repo)
     ranked = rerank(query_text, hits, top_n=limit)
     pack = build_pack(query_text, ranked, query_issue_id=query_issue_id)
     return pack_to_dict(pack)
