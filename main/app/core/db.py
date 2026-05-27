@@ -111,25 +111,30 @@ def upsert_issue(conn: psycopg.Connection, issue: Issue) -> UUID:
 def get_issues_for_embedding(conn: psycopg.Connection) -> list[tuple[UUID, str, str, str, list[tuple[str, str]]]]:
     """
     Returns list of (issue_id, repo_owner, repo_name, text_full, [(chunk_id, content), ...])
-    for all issues that have non-empty text_full. Chunks loaded from issue_chunks.
+    for all issues that have non-empty text_full.
     """
-    out = []
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id, repo_owner, repo_name, text_full
-            FROM issues
-            WHERE text_full IS NOT NULL AND text_full != ''
+            SELECT i.id, i.repo_owner, i.repo_name, i.text_full,
+                   c.chunk_id, c.content
+            FROM issues i
+            LEFT JOIN issue_chunks c ON c.issue_id = i.id
+            WHERE i.text_full IS NOT NULL AND i.text_full != ''
+            ORDER BY i.id, c.chunk_index
             """
         )
-        for row in cur.fetchall():
-            issue_id, repo_owner, repo_name, text_full = row[0], row[1], row[2], (row[3] or "").strip()
-            cur.execute(
-                "SELECT chunk_id, content FROM issue_chunks WHERE issue_id = %s ORDER BY chunk_index",
-                (issue_id,),
-            )
-            chunks = [(r[0], r[1] or "") for r in cur.fetchall()]
-            out.append((issue_id, repo_owner, repo_name, text_full, chunks))
+        rows = cur.fetchall()
+
+    seen: dict[UUID, int] = {}
+    out: list[tuple[UUID, str, str, str, list[tuple[str, str]]]] = []
+    for row in rows:
+        issue_id, repo_owner, repo_name, text_full, chunk_id, content = row
+        if issue_id not in seen:
+            seen[issue_id] = len(out)
+            out.append((issue_id, repo_owner, repo_name, (text_full or "").strip(), []))
+        if chunk_id is not None:
+            out[seen[issue_id]][4].append((chunk_id, content or ""))
     return out
 
 
