@@ -87,31 +87,30 @@ The full response is served to the **React SPA** or consumed directly via the JS
 ## Project status
 
 ### Done
-- [x] Full ingestion pipeline — GitHub sync, HTML/markdown cleaning, chunking, batch embedding
-- [x] Hybrid retrieval — BM25 + pgvector + RRF + CrossEncoder reranker
-- [x] Multi-task ML classification — SetFit (urgency), sklearn LR (3 tasks), heuristic fallback
-- [x] REST API — `POST /search`, `GET /related/{id}`, `POST /ingest`, `GET /health`
+- [x] Full ingestion pipeline — GitHub and GitLab sync, HTML/markdown cleaning, chunking, batch embedding
+- [x] Hybrid retrieval — BM25 + pgvector issue-level + pgvector chunk-level, all fused via RRF + CrossEncoder reranker
+- [x] Embedding deduplication — query embedded once per request; shared across retrieval and classification
+- [x] Multi-task ML classification — SetFit (all 4 tasks), sklearn LR (4 tasks), heuristic fallback; per-task independent loading
+- [x] REST API — `POST /search`, `POST /stream-search`, `GET /related/{id}`, `POST /ingest`, `POST /ingest/gitlab`, `GET /health`
+- [x] Streaming search — NDJSON server-sent events with `retrieval → reranked → complete` stages
+- [x] API key authentication — `X-API-Key` header, no-op when `API_KEYS` unset (open access for local dev)
 - [x] Intelligence pack builder — citation-only output, suggested action, confidence scores
 - [x] React + Vite SPA — search, predictions panel, similar-issue cards, ingest drawer
 - [x] Multi-stage Dockerfile + Docker Compose
 - [x] GitHub Actions CI — lint, build, test
-- [x] Full unit test suite — embedder, hybrid, ingest router, trainer, data loader, SetFit classifier
+- [x] Full unit test suite (95 tests) — embedder, hybrid, ingest router, trainer, SetFit classifier, auth, streaming, GitLab, model registry
 - [x] Evaluation scripts — classification metrics (precision/recall/F1) and retrieval metrics (Recall@K, MRR, nDCG@K)
-- [x] SetFit training script with MPS/CUDA/CPU auto-detection
+- [x] Eval seed datasets — `eval/relevance_set.jsonl` and `eval/classification_set.jsonl`
+- [x] `generate_eval_set.py` — auto-generate eval datasets from DB issues
+- [x] SetFit training for all 4 tasks with MPS/CUDA/CPU auto-detection
+- [x] Versioned model registry — `models/<task>/v<N>/` with `metadata.json` per version
+- [x] Celery async job queue — Redis-backed workers with autoretry; `BackgroundTasks` fallback when Celery unavailable
+- [x] GitLab connector — `POST /ingest/gitlab`, `sync_repos.py --repo gl:ns/project`
 - [x] Labeled-data export script for building training datasets
 
-### In progress
-- [ ] **Chunk-level retrieval** — embeddings are stored per-chunk but search currently uses issue-level embeddings only; sub-issue precision is the next retrieval upgrade
-- [ ] **Eval dataset** — building a public relevance-judgment set for reproducible benchmarking
-
 ### Planned
-- [ ] **Extend SetFit to all 4 tasks** — `issue_type`, `action_recommendation`, `is_regression` once labeled datasets exist
-- [ ] **Deduplicate embedding at inference** — query is currently embedded twice (once for retrieval, once inside SetFitModel); both can share one fine-tuned model
-- [ ] **GitLab connector** — schema already supports `source` field; needs a GitLab sync implementation
-- [ ] **Celery async job queue** — replace `FastAPI.BackgroundTasks` with Redis-backed workers for large syncs
-- [ ] **Streaming search responses** — return results progressively as the pipeline stages complete
-- [ ] **Auth + multi-tenancy** — API key scoping per organisation or team
-- [ ] **Model versioning** — experiment tracking for classifier iterations
+- [ ] **Multi-tenancy** — per-organisation namespacing; API keys scoped to a tenant with isolated issue corpora
+- [ ] **Online learning** — re-rank feedback loop; use thumbs-up/down signals to retrain classifiers incrementally
 
 ---
 
@@ -202,7 +201,10 @@ Copy `main/.env.example` to `main/.env`.
 | `EMBEDDING_MODEL_NAME` | — | `all-MiniLM-L6-v2` | Model name for the chosen provider. |
 | `EMBEDDING_DIM` | — | `384` | Vector dimension — must match the model and the pgvector index. |
 | `OPENAI_API_KEY` | — | — | Required when `EMBEDDING_PROVIDER=openai`. |
-| `CELERY_BROKER_URL` | — | `redis://localhost:6379/0` | Only needed if using Celery workers. |
+| `CELERY_BROKER_URL` | — | — | Redis URL for Celery workers. When unset, syncs run in-process. |
+| `GITLAB_TOKEN` | — | — | GitLab personal access token (required for GitLab sync). |
+| `GITLAB_URL` | — | `https://gitlab.com` | GitLab instance URL (for self-hosted). |
+| `API_KEYS` | — | — | Comma-separated API keys. When set, all routes require `X-API-Key`. |
 
 ¹ Set either `DATABASE_URL` **or** the `DB_*` group. The individual parts are preferred when the password contains special characters.
 
@@ -255,41 +257,80 @@ Find related issues for an issue already in the database.
 GET /related/550e8400-e29b-41d4-a716-446655440000?repo=owner/repo&limit=10
 ```
 
+### `POST /stream-search`
+
+Same as `/search` but streams NDJSON progress events. Useful for showing progress in the UI as each pipeline stage completes.
+
+Three events in order:
+1. `{"stage": "retrieval", "count": N, "issue_ids": [...]}`
+2. `{"stage": "reranked", "count": N, "results": [...]}`
+3. `{"stage": "complete", ...full SearchResponse fields...}`
+
+Request body is identical to `/search`.
+
 ### `POST /ingest`
 
-Trigger a GitHub repo sync (and optionally build the embedding index) in the background. Returns `202 Accepted` immediately.
+Trigger a GitHub repo sync (and optionally build the embedding index) in the background. Dispatches to Celery when `CELERY_BROKER_URL` is set; falls back to FastAPI `BackgroundTasks`. Returns `202 Accepted` immediately.
 
 ```jsonc
 { "repo": "owner/repo", "index": true }
+// Response: {"status": "accepted", "repo": "owner/repo", "queued": true}
 ```
+
+### `POST /ingest/gitlab`
+
+Same as `/ingest` but for GitLab projects.
+
+```jsonc
+{ "namespace": "my-group", "project": "my-project", "index": true }
+```
+
+### Authentication
+
+When `API_KEYS` is set in the environment, every `/search`, `/stream-search`, `/related`, and `/ingest` request requires an `X-API-Key` header matching one of the configured keys. When unset, all routes are open (suitable for local dev).
 
 ---
 
 ## Training classifiers
 
-### SetFit urgency model
+### SetFit (all four tasks)
 
 ```bash
 cd main
+
+# Train one task
 python scripts/train_setfit.py \
+  --task urgency \
   --dataset shinena-xiang/dev-issue-urgency-classification-ds \
   --output models/urgency-setfit \
   --epochs 1
+
+# Train all four tasks
+python scripts/train_setfit.py --task all --dataset <hf-dataset> --output models/
 ```
 
 Auto-detects Apple Silicon (MPS), CUDA, or CPU.
 
-### sklearn classifiers (issue_type, action_recommendation, is_regression)
+### sklearn classifiers
 
 ```bash
 # 1. Export labeled issues from your database
 python scripts/label_data.py --input issues.json --output labeled.jsonl
 
-# 2. Train
+# 2. Train all four tasks (saved to versioned models/<task>/v<N>/)
 python scripts/train_classifiers.py --data labeled.jsonl --models-dir models/
 ```
 
-Trained models are saved to `main/models/` and loaded automatically at startup.
+Trained models are versioned in `main/models/<task>/v<N>/` with `metadata.json` and loaded automatically at startup. Pass `--use-registry false` to use the legacy flat layout.
+
+### Generate eval datasets
+
+```bash
+# Auto-generate eval sets from issues already in your DB
+python scripts/generate_eval_set.py --limit 500 --seed 42
+```
+
+Outputs `eval/relevance_set.jsonl` and `eval/classification_set.jsonl`.
 
 ---
 
