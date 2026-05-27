@@ -2,12 +2,18 @@
 
 from app.core.config import get_settings
 
+_EMBEDDER: "_SentenceTransformerEmbedder | _OpenAIEmbedder | None" = None
+
 
 def _get_embedder():
-    s = get_settings()
-    if (s.embedding_provider or "").lower() == "openai":
-        return _OpenAIEmbedder(s)
-    return _SentenceTransformerEmbedder(s)
+    global _EMBEDDER
+    if _EMBEDDER is None:
+        s = get_settings()
+        if (s.embedding_provider or "").lower() == "openai":
+            _EMBEDDER = _OpenAIEmbedder(s)
+        else:
+            _EMBEDDER = _SentenceTransformerEmbedder(s)
+    return _EMBEDDER
 
 
 class _SentenceTransformerEmbedder:
