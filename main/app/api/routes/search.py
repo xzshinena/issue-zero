@@ -2,16 +2,20 @@
 Search-related API routes.
 
 Endpoints:
-  POST /search       — hybrid retrieval + rerank + intelligence pack
-  GET  /related/{id} — find related issues for an existing issue by DB id
+  POST /search        — hybrid retrieval + rerank + intelligence pack
+  POST /stream-search — same pipeline, Server-Sent Events (NDJSON) with progress stages
+  GET  /related/{id}  — find related issues for an existing issue by DB id
 """
 
 from __future__ import annotations
 
+import json
 import re
+from typing import Generator
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.db import get_conn
@@ -133,6 +137,67 @@ def search_issues(request: SearchRequest):
 
     result = _run_pipeline(query_text, request.repo, request.limit, query_issue_id)
     return result
+
+
+def _stream_pipeline(
+    query_text: str, repo: str | None, limit: int, query_issue_id: str | None
+) -> Generator[str, None, None]:
+    """Yield NDJSON lines as each stage of the pipeline completes."""
+    def _emit(stage: str, data: dict) -> str:
+        return json.dumps({"stage": stage, **data}, default=str) + "\n"
+
+    # Stage 1: retrieval
+    query_vec = embed(query_text)
+    hits = hybrid_search(query_text, final_n=min(limit * 3, 20), repo_filter=repo,
+                         query_embedding=query_vec)
+    yield _emit("retrieval", {
+        "count": len(hits),
+        "issue_ids": [str(h.get("id", "")) for h in hits],
+    })
+
+    # Stage 2: reranked
+    ranked = rerank(query_text, hits, top_n=limit)
+    yield _emit("reranked", {
+        "count": len(ranked),
+        "results": [
+            {"id": str(r.get("id", "")), "title": r.get("title", ""), "score": r.get("rerank_score", 0.0)}
+            for r in ranked
+        ],
+    })
+
+    # Stage 3: complete pack (classifications + pack)
+    pack = build_pack(query_text, ranked, query_issue_id=query_issue_id,
+                      query_embedding=query_vec)
+    result = pack_to_dict(pack)
+    yield _emit("complete", result)
+
+
+@router.post("/stream-search")
+def stream_search_issues(request: SearchRequest):
+    """
+    Same as /search but streams NDJSON progress events.
+
+    Three events in order:
+      {"stage": "retrieval",  "count": N, "issue_ids": [...]}
+      {"stage": "reranked",   "count": N, "results": [...]}
+      {"stage": "complete",   ...full SearchResponse fields...}
+    """
+    if not request.query and not request.issue_url:
+        raise HTTPException(status_code=400, detail="Provide either 'query' or 'issue_url'.")
+
+    query_issue_id: str | None = None
+    if request.issue_url:
+        query_text, query_issue_id = _resolve_issue_url(request.issue_url)
+    else:
+        query_text = request.query or ""
+
+    if not query_text.strip():
+        raise HTTPException(status_code=400, detail="Resolved query text is empty.")
+
+    return StreamingResponse(
+        _stream_pipeline(query_text, request.repo, request.limit, query_issue_id),
+        media_type="application/x-ndjson",
+    )
 
 
 @router.get("/related/{issue_id}", response_model=SearchResponse)
