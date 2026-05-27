@@ -29,3 +29,9 @@ joblib
 # openai
 # celery
 # redis
+
+# Dev / testing
+pytest
+pytest-asyncio
+pytest-cov
+httpx
