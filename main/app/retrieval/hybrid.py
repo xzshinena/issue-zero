@@ -14,7 +14,7 @@ from app.retrieval.embedder import embed
 
 RRF_K = 60
 DEFAULT_TOP_K = 100
-DEFAULT_FINAL_N = 50
+DEFAULT_FINAL_N = 20
 
 
 @dataclass
@@ -102,16 +102,17 @@ class BM25Index:
         return results
 
 
-_bm25_cache: BM25Index | None = None
+_bm25_cache: dict[str | None, BM25Index] = {}
 
 
 def get_bm25_index(conn: psycopg.Connection, repo_filter: str | None = None, rebuild: bool = False) -> BM25Index:
-    """Return a cached BM25 index (rebuild if needed)."""
+    """Return a cached BM25 index keyed by repo_filter (rebuild if missing or forced)."""
     global _bm25_cache
-    if _bm25_cache is None or rebuild:
-        _bm25_cache = BM25Index()
-        _bm25_cache.build(conn, repo_filter=repo_filter)
-    return _bm25_cache
+    if repo_filter not in _bm25_cache or rebuild:
+        idx = BM25Index()
+        idx.build(conn, repo_filter=repo_filter)
+        _bm25_cache[repo_filter] = idx
+    return _bm25_cache[repo_filter]
 
 
 # ---------------------------------------------------------------------------
