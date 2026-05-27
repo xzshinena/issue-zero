@@ -15,6 +15,9 @@ pygithub
 httpx
 python-dotenv
 
+# GitLab (optional — only needed for GitLab sync)
+python-gitlab
+
 # Embeddings (sentence-transformers for local; openai optional for API)
 sentence-transformers
 

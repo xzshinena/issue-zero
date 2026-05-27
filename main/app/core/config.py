@@ -58,8 +58,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     embedding_dim: int = 384
 
+    # GitLab
+    gitlab_url: str = "https://gitlab.com"
+    gitlab_token: str = ""
+
     # Celery broker
-    celery_broker_url: str = "redis://localhost:6379/0"  
+    celery_broker_url: str = "redis://localhost:6379/0"
+
+    # Auth — comma-separated API keys; empty means open access
+    api_keys: str = ""
 
 
 def get_settings() -> Settings:

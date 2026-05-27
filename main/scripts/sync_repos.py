@@ -1,75 +1,79 @@
 #!/usr/bin/env python3
 """
-Batch sync: read REPOS_TO_SYNC from config, fetch from GitHub, normalize,
-preprocess (text_full + chunks), and upsert into PostgreSQL.
+Batch sync: read REPOS_TO_SYNC from config, fetch from GitHub or GitLab,
+normalize, preprocess (text_full + chunks), and upsert into PostgreSQL.
 
-Run from main/:  python scripts/sync_repos.py
-Or sync a single repo:  python scripts/sync_repos.py --repo owner/repo
+Run from main/:
+  python scripts/sync_repos.py                      # all repos in REPOS_TO_SYNC
+  python scripts/sync_repos.py --repo owner/repo    # GitHub
+  python scripts/sync_repos.py --repo gl:ns/project # GitLab (prefix with gl:)
 """
 
 import argparse
 import os
 import sys
 
-# Ensure app is importable when run as script
 _MAIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _MAIN not in sys.path:
     sys.path.insert(0, _MAIN)
 
 from app.core.config import get_settings
-from app.ingestion.github import sync_repo, sync_repos_from_config
+from app.ingestion.github import sync_repo as sync_github, sync_repos_from_config
 from app.ingestion.pipeline import run_index_embeddings
+
+
+def _sync_one(repo_spec: str) -> tuple[int, int]:
+    """Dispatch to GitHub or GitLab based on the repo_spec prefix."""
+    if repo_spec.startswith("gl:"):
+        from app.ingestion.gitlab import sync_gitlab_project  # noqa: PLC0415
+        path = repo_spec[3:].strip()
+        ns, _, proj = path.partition("/")
+        if not ns or not proj:
+            raise ValueError(f"GitLab repo must be 'gl:namespace/project', got: {repo_spec!r}")
+        return sync_gitlab_project(ns.strip(), proj.strip())
+    # Default: GitHub
+    owner, _, repo_name = repo_spec.partition("/")
+    owner, repo_name = owner.strip(), repo_name.strip()
+    if not owner or not repo_name:
+        raise ValueError(f"GitHub repo must be 'owner/repo', got: {repo_spec!r}")
+    return sync_github(owner, repo_name)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Sync GitHub issues to PostgreSQL (fetch + normalize + preprocess + upsert)."
+        description="Sync issues from GitHub or GitLab to PostgreSQL."
     )
     parser.add_argument(
         "--repo",
-        metavar="OWNER/REPO",
-        help="Sync a single repo (overrides REPOS_TO_SYNC).",
+        metavar="[gl:]OWNER/REPO",
+        help="Sync a single repo. Prefix with 'gl:' for GitLab.",
     )
-    parser.add_argument(
-        "-q", "--quiet",
-        action="store_true",
-        help="Only print errors.",
-    )
-    parser.add_argument(
-        "--index",
-        action="store_true",
-        help="After sync, run embedding index (issue_embeddings).",
-    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="Only print errors.")
+    parser.add_argument("--index", action="store_true",
+                        help="After sync, run embedding index (issue_embeddings).")
     args = parser.parse_args()
 
     if args.repo:
-        part = args.repo.strip()
-        if "/" not in part:
-            print("error: --repo must be OWNER/REPO", file=sys.stderr)
-            return 1
-        owner, _, repo_name = part.partition("/")
-        owner, repo_name = owner.strip(), repo_name.strip()
-        if not owner or not repo_name:
-            print("error: --repo must be OWNER/REPO", file=sys.stderr)
-            return 1
+        spec = args.repo.strip()
         try:
-            updated, skipped = sync_repo(owner, repo_name)
+            updated, skipped = _sync_one(spec)
         except Exception as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
         if not args.quiet:
-            print(f"{owner}/{repo_name}: {updated} issues upserted, {skipped} PRs skipped.")
+            print(f"{spec}: {updated} issues upserted, {skipped} skipped.")
         if args.index:
             issues_ok, emb_count = run_index_embeddings()
             if not args.quiet:
                 print(f"Index: {issues_ok} issues, {emb_count} embeddings.")
         return 0
 
+    # Batch from config
     settings = get_settings()
     raw = (settings.repos_to_sync or "").strip()
     if not raw:
         if not args.quiet:
-            print("No REPOS_TO_SYNC configured. Set in .env or use --repo OWNER/REPO.")
+            print("No REPOS_TO_SYNC configured. Set in .env or use --repo.")
         return 0
 
     try:
@@ -80,8 +84,9 @@ def main() -> int:
 
     if not args.quiet:
         for key, (updated, skipped) in results.items():
-            print(f"{key}: {updated} issues upserted, {skipped} PRs skipped.")
+            print(f"{key}: {updated} issues upserted, {skipped} skipped.")
         print(f"Done. {len(results)} repo(s) synced.")
+
     if args.index:
         issues_ok, emb_count = run_index_embeddings()
         if not args.quiet:
