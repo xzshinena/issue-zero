@@ -1,0 +1,10 @@
+{"query": "application crashes with segmentation fault when processing large files", "relevant_issue_ids": [], "notes": "high-urgency crash bug; should surface critical/crash issues"}
+{"query": "add support for dark mode in the settings panel", "relevant_issue_ids": [], "notes": "feature request; should surface enhancement/feature issues, not bugs"}
+{"query": "regression: login no longer works after upgrading to v2.3", "relevant_issue_ids": [], "notes": "regression query; should surface regression-tagged or auth-related issues"}
+{"query": "documentation is missing for the REST API /users endpoint", "relevant_issue_ids": [], "notes": "docs issue; should surface documentation gaps, not crashes"}
+{"query": "memory leak in background worker thread under heavy load", "relevant_issue_ids": [], "notes": "performance/memory issue; should surface OOM or performance bugs"}
+{"query": "null pointer exception when user submits empty form fields", "relevant_issue_ids": [], "notes": "bug with specific reproduction; should surface NPE / validation bugs"}
+{"query": "cannot reproduce: flaky test in CI pipeline fails intermittently", "relevant_issue_ids": [], "notes": "flaky test / infra; should surface CI or flaky issues"}
+{"query": "proposal: support batch export of data as CSV", "relevant_issue_ids": [], "notes": "feature proposal; should surface enhancement requests"}
+{"query": "stack overflow error when recursion depth exceeds limit", "relevant_issue_ids": [], "notes": "critical crash; should surface overflow / crash issues"}
+{"query": "typo in README: 'recieve' should be 'receive'", "relevant_issue_ids": [], "notes": "trivial docs fix; should surface low-urgency doc issues"}
