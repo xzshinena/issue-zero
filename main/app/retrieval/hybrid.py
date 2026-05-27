@@ -1,4 +1,12 @@
-"""Hybrid retrieval (BM25 + vector) with Reciprocal Rank Fusion (RRF)."""
+"""Hybrid retrieval (BM25 + vector) with Reciprocal Rank Fusion (RRF).
+
+Search strategy:
+  1. BM25 keyword search over issues.text_full (in-memory, per-repo cached)
+  2. Vector cosine search on issue-level embeddings (chunk_id IS NULL)
+  3. Vector cosine search on chunk-level embeddings (chunk_id IS NOT NULL),
+     max-pooled per issue so long issues get credit for matching paragraphs
+  4. All three lists fused with RRF (k=60)
+"""
 
 from __future__ import annotations
 
@@ -119,15 +127,28 @@ def get_bm25_index(conn: psycopg.Connection, repo_filter: str | None = None, reb
 # Vector retrieval (pgvector)
 # ---------------------------------------------------------------------------
 
+def _repo_filter_clause(repo_filter: str | None, params: list, table_alias: str = "e") -> str:
+    """Append repo owner/name filter clause and extend params in-place. Returns SQL fragment."""
+    if not repo_filter:
+        return ""
+    owner, _, name = repo_filter.partition("/")
+    if owner and name:
+        params.extend([owner.strip(), name.strip()])
+        return f" AND {table_alias}.repo_owner = %s AND {table_alias}.repo_name = %s"
+    return ""
+
+
 def vector_search(
     conn: psycopg.Connection,
     query_embedding: list[float],
     top_k: int = DEFAULT_TOP_K,
     repo_filter: str | None = None,
 ) -> list[tuple[UUID, float, str, str, str]]:
-    """Return top-K (issue_id, cosine_similarity, title, url, text_full) via pgvector."""
+    """Return top-K (issue_id, cosine_similarity, title, url, text_full) — issue-level only."""
     vec_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
-    query = """
+    params: list = [vec_str]
+    repo_clause = _repo_filter_clause(repo_filter, params)
+    query = f"""
         SELECT e.issue_id,
                1 - (e.embedding <=> %s::vector) AS similarity,
                i.title,
@@ -135,21 +156,58 @@ def vector_search(
                i.text_full
         FROM issue_embeddings e
         JOIN issues i ON i.id = e.issue_id
-        WHERE e.chunk_id IS NULL
+        WHERE e.chunk_id IS NULL{repo_clause}
+        ORDER BY e.embedding <=> %s::vector
+        LIMIT %s
     """
-    params: list = [vec_str]
-    if repo_filter:
-        owner, _, name = repo_filter.partition("/")
-        if owner and name:
-            query += " AND e.repo_owner = %s AND e.repo_name = %s"
-            params.extend([owner.strip(), name.strip()])
-    query += " ORDER BY e.embedding <=> %s::vector LIMIT %s"
     params.extend([vec_str, top_k])
-
     with conn.cursor() as cur:
         cur.execute(query, params)
         rows = cur.fetchall()
     return [(r[0], float(r[1]), r[2] or "", r[3] or "", r[4] or "") for r in rows]
+
+
+def vector_search_chunks(
+    conn: psycopg.Connection,
+    query_embedding: list[float],
+    top_k: int = DEFAULT_TOP_K,
+    repo_filter: str | None = None,
+) -> list[tuple[UUID, float, str, str, str]]:
+    """Search chunk-level embeddings; max-pools per issue_id before returning.
+
+    Returns top-K (issue_id, best_chunk_similarity, title, url, text_full) deduplicated
+    by issue, keeping the highest cosine score across all chunks of that issue.
+    """
+    vec_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+    params: list = [vec_str]
+    repo_clause = _repo_filter_clause(repo_filter, params)
+    # Fetch more raw rows than top_k so that after dedup we still have top_k unique issues.
+    raw_limit = top_k * 5
+    query = f"""
+        SELECT e.issue_id,
+               1 - (e.embedding <=> %s::vector) AS similarity,
+               i.title,
+               i.url,
+               i.text_full
+        FROM issue_embeddings e
+        JOIN issues i ON i.id = e.issue_id
+        WHERE e.chunk_id IS NOT NULL{repo_clause}
+        ORDER BY e.embedding <=> %s::vector
+        LIMIT %s
+    """
+    params.extend([vec_str, raw_limit])
+    with conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    # Max-pool: keep the highest similarity across all chunks for each issue.
+    best: dict[UUID, tuple[float, str, str, str]] = {}
+    for issue_id, sim, title, url, text_full in rows:
+        if issue_id not in best or sim > best[issue_id][0]:
+            best[issue_id] = (sim, title or "", url or "", text_full or "")
+
+    ranked = sorted(best.items(), key=lambda kv: kv[1][0], reverse=True)[:top_k]
+    return [(uid, data[0], data[1], data[2], data[3]) for uid, data in ranked]
 
 
 # ---------------------------------------------------------------------------
@@ -181,10 +239,21 @@ def hybrid_search(
     final_n: int = DEFAULT_FINAL_N,
     repo_filter: str | None = None,
     conn: psycopg.Connection | None = None,
+    query_embedding: list[float] | None = None,
 ) -> list[RetrievalHit]:
-    """
-    Run BM25 + vector search, fuse with RRF, return top-N RetrievalHit objects
-    sorted by RRF score (descending).
+    """Run BM25 + issue-level vector + chunk-level vector search, fuse with RRF.
+
+    Args:
+        query_text:      The search query.
+        top_k:           Number of candidates per retrieval signal before fusion.
+        final_n:         Number of hits to return after fusion.
+        repo_filter:     Optional "owner/name" string to scope search to one repo.
+        conn:            Optional existing DB connection (will open one if None).
+        query_embedding: Optional pre-computed query embedding; avoids a redundant
+                         embed() call when the caller already has the vector.
+
+    Returns:
+        List of RetrievalHit sorted by RRF score descending.
     """
     should_close = conn is None
     if conn is None:
@@ -194,27 +263,37 @@ def hybrid_search(
         ctx = None
 
     try:
+        # Embed once — reuse for both issue-level and chunk-level vector search.
+        query_vec = query_embedding if query_embedding is not None else embed(query_text)
+
         # BM25
         bm25_idx = get_bm25_index(conn, repo_filter=repo_filter)
         bm25_results = bm25_idx.query(query_text, top_k=top_k)
 
-        # Vector
-        query_vec = embed(query_text)
+        # Issue-level vector search
         vec_results = vector_search(conn, query_vec, top_k=top_k, repo_filter=repo_filter)
 
-        # RRF merge
-        rrf_scores = reciprocal_rank_fusion(bm25_results, vec_results)
+        # Chunk-level vector search (max-pooled per issue)
+        chunk_results = vector_search_chunks(conn, query_vec, top_k=top_k, repo_filter=repo_filter)
 
-        # Build lookup for metadata
+        # RRF merge across all three signals
+        rrf_scores = reciprocal_rank_fusion(bm25_results, vec_results, chunk_results)
+
+        # Build metadata and per-signal score maps
         meta: dict[UUID, tuple[str, str, str]] = {}
         bm25_score_map: dict[UUID, float] = {}
         vec_score_map: dict[UUID, float] = {}
+        chunk_score_map: dict[UUID, float] = {}
+
         for issue_id, score, title, url, text_full in bm25_results:
             meta[issue_id] = (title, url, text_full)
             bm25_score_map[issue_id] = score
         for issue_id, score, title, url, text_full in vec_results:
             meta.setdefault(issue_id, (title, url, text_full))
             vec_score_map[issue_id] = score
+        for issue_id, score, title, url, text_full in chunk_results:
+            meta.setdefault(issue_id, (title, url, text_full))
+            chunk_score_map[issue_id] = score
 
         sorted_ids = sorted(rrf_scores, key=lambda uid: rrf_scores[uid], reverse=True)[:final_n]
 
@@ -230,6 +309,7 @@ def hybrid_search(
                 source_scores={
                     "bm25": bm25_score_map.get(uid, 0.0),
                     "vector": vec_score_map.get(uid, 0.0),
+                    "chunk_vector": chunk_score_map.get(uid, 0.0),
                     "rrf": rrf_scores[uid],
                 },
             ))
