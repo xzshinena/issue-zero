@@ -19,11 +19,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+from app.ml.label_schema import ACTION_LABELS, ISSUE_TYPE_LABELS, URGENCY_LABELS
 
-URGENCY_LABELS = ["critical_bug", "high", "medium", "low", "enhancement", "question"]
-ISSUE_TYPE_LABELS = ["bug", "feature_request", "docs", "refactor", "regression", "question"]
-ACTION_LABELS = ["triage", "assign_to_area", "need_more_info", "duplicate", "close"]
+MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
 
 
 @dataclass
