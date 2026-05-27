@@ -71,3 +71,14 @@ from app.api.routes.ingest import router as ingest_router  # noqa: E402
 
 app.include_router(search_router)
 app.include_router(ingest_router)
+
+# ---------------------------------------------------------------------------
+# SPA static files (mounted last so API routes take priority)
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path  # noqa: E402
+
+_DIST = _Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _DIST.is_dir():
+    from fastapi.staticfiles import StaticFiles  # noqa: E402
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="spa")
