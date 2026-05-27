@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -68,9 +68,10 @@ def health():
 
 from app.api.routes.search import router as search_router  # noqa: E402
 from app.api.routes.ingest import router as ingest_router  # noqa: E402
+from app.core.auth import require_api_key  # noqa: E402
 
-app.include_router(search_router)
-app.include_router(ingest_router)
+app.include_router(search_router, dependencies=[Depends(require_api_key)])
+app.include_router(ingest_router, dependencies=[Depends(require_api_key)])
 
 # ---------------------------------------------------------------------------
 # SPA static files (mounted last so API routes take priority)
