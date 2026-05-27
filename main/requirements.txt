@@ -25,6 +25,10 @@ rank_bm25
 scikit-learn
 joblib
 
+# SetFit fine-tuning (urgency classifier)
+setfit
+datasets
+
 # Optional
 # openai
 # celery
