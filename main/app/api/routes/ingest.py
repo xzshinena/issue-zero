@@ -11,9 +11,6 @@ import logging
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
-from app.ingestion.github import sync_repo
-from app.ingestion.pipeline import run_index_embeddings
-
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["ingest"])
 
@@ -30,6 +27,9 @@ class IngestResponse(BaseModel):
 
 def _sync_task(owner: str, repo_name: str, index: bool) -> None:
     try:
+        from app.ingestion.github import sync_repo
+        from app.ingestion.pipeline import run_index_embeddings
+
         sync_repo(owner, repo_name)
         if index:
             run_index_embeddings()

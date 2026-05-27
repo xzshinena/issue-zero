@@ -36,7 +36,7 @@ def test_main_skips_bad_json(tmp_path):
     in_path.write_text(
         '{"title": "valid", "body": "ok"}\n'
         "NOT_JSON\n"
-        '{"title": "also valid", "body": "fine"}\n",
+        '{"title": "also valid", "body": "fine"}\n',
         encoding="utf-8",
     )
     out_path = tmp_path / "out.jsonl"
