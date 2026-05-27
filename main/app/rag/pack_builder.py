@@ -55,6 +55,7 @@ def build_pack(
     ranked_hits: list[RankedHit],
     query_issue_id: str | None = None,
     labels: list[str] | None = None,
+    query_embedding: list[float] | None = None,
 ) -> IntelligencePack:
     """
     Assemble the full intelligence pack:
@@ -78,7 +79,7 @@ def build_pack(
         similar.append(entry)
         citation_ids.append(hit.issue_id)
 
-    preds = predict_dict(query_text, labels=labels)
+    preds = predict_dict(query_text, labels=labels, embedding=query_embedding)
     action = _pick_action(preds, similar)
 
     return IntelligencePack(

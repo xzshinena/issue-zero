@@ -33,14 +33,14 @@ class TestDetectTextCol:
 
 class TestDetectLabelCol:
     def test_finds_urgency(self):
-        assert _detect_label_col({"text": None, "urgency": None}) == "urgency"
+        assert _detect_label_col({"text": None, "urgency": None}, "urgency") == "urgency"
 
     def test_finds_label_fallback(self):
-        assert _detect_label_col({"text": None, "label": None}) == "label"
+        assert _detect_label_col({"text": None, "label": None}, "urgency") == "label"
 
     def test_raises_on_unknown(self):
         with pytest.raises(ValueError, match="No label column"):
-            _detect_label_col({"text": None, "foo": None})
+            _detect_label_col({"text": None, "foo": None}, "urgency")
 
 
 # ---------------------------------------------------------------------------

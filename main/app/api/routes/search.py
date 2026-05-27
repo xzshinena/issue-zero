@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.core.db import get_conn
+from app.retrieval.embedder import embed
 from app.retrieval.hybrid import hybrid_search
 from app.retrieval.reranker import rerank
 from app.rag.pack_builder import build_pack, pack_to_dict
@@ -96,10 +97,15 @@ def _resolve_issue_url(url: str) -> tuple[str, str | None]:
 
 
 def _run_pipeline(query_text: str, repo: str | None, limit: int, query_issue_id: str | None = None) -> dict:
-    """Full pipeline: hybrid search -> rerank -> pack."""
-    hits = hybrid_search(query_text, final_n=min(limit * 3, 20), repo_filter=repo)
+    """Full pipeline: embed once → hybrid search → rerank → pack + classify."""
+    # Embed the query once; pass the vector to both retrieval and classification so
+    # neither re-encodes. (SetFit routes through its classification head directly.)
+    query_vec = embed(query_text)
+    hits = hybrid_search(query_text, final_n=min(limit * 3, 20), repo_filter=repo,
+                         query_embedding=query_vec)
     ranked = rerank(query_text, hits, top_n=limit)
-    pack = build_pack(query_text, ranked, query_issue_id=query_issue_id)
+    pack = build_pack(query_text, ranked, query_issue_id=query_issue_id,
+                      query_embedding=query_vec)
     return pack_to_dict(pack)
 
 
