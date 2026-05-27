@@ -43,6 +43,9 @@ class Predictions:
 _trained_models: dict[str, Any] = {}
 _models_loaded = False
 
+_setfit_model: Any = None
+_setfit_loaded: bool = False
+
 
 def _try_load_trained() -> bool:
     """Attempt to load joblib models from MODELS_DIR. Returns True if all four found."""
@@ -67,31 +70,56 @@ def _try_load_trained() -> bool:
     return all_found
 
 
+def _try_load_setfit() -> bool:
+    """Load the SetFit urgency model from models/urgency-setfit/ if present."""
+    global _setfit_model, _setfit_loaded
+    if _setfit_loaded:
+        return _setfit_model is not None
+    _setfit_loaded = True
+    setfit_dir = MODELS_DIR / "urgency-setfit"
+    if not setfit_dir.is_dir():
+        return False
+    try:
+        from setfit import SetFitModel  # noqa: PLC0415
+        _setfit_model = SetFitModel.from_pretrained(str(setfit_dir))
+        return True
+    except Exception:
+        return False
+
+
 def _predict_trained(text: str) -> Predictions | None:
-    """Run sklearn models if they are loaded. Returns None if not available."""
+    """SetFit for urgency (preferred); sklearn LR for the remaining three tasks."""
+    _try_load_setfit()
     if not _trained_models:
-        if not _try_load_trained():
-            return None
-    if not _trained_models:
+        _try_load_trained()
+
+    urgency_model = _setfit_model or _trained_models.get("urgency")
+    if urgency_model is None:
         return None
 
-    results: dict[str, tuple[str, float]] = {}
-    for name in ["urgency", "issue_type", "action_recommendation", "is_regression"]:
-        model = _trained_models.get(name)
-        if model is None:
+    for name in ("issue_type", "action_recommendation", "is_regression"):
+        if name not in _trained_models:
             return None
+
+    urg_pred = str(urgency_model.predict([text])[0])
+    urg_conf = 0.0
+    if hasattr(urgency_model, "predict_proba"):
+        urg_conf = float(max(urgency_model.predict_proba([text])[0]))
+
+    results: dict[str, tuple[str, float]] = {}
+    for name in ("issue_type", "action_recommendation", "is_regression"):
+        model = _trained_models[name]
         pred = model.predict([text])[0]
         conf = 0.0
         if hasattr(model, "predict_proba"):
-            proba = model.predict_proba([text])[0]
-            conf = float(max(proba))
+            conf = float(max(model.predict_proba([text])[0]))
         elif hasattr(model, "decision_function"):
             conf = 0.7
         results[name] = (str(pred), conf)
 
     return Predictions(
-        urgency=results["urgency"][0],
-        urgency_confidence=results["urgency"][1],
+        urgency=urg_pred,
+        urgency_confidence=urg_conf,
         issue_type=results["issue_type"][0],
         issue_type_confidence=results["issue_type"][1],
         action_recommendation=results["action_recommendation"][0],

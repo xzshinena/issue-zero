@@ -13,6 +13,8 @@ from app.core.db import close_pool
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.ml.classifiers import _try_load_setfit
+    _try_load_setfit()
     yield
     close_pool()
 
