@@ -87,14 +87,16 @@ def train_task(
 def train_all(
     records: list[dict],
     models_dir: str | Path | None = None,
+    use_registry: bool = True,
 ) -> dict[str, LabeledClassifier]:
-    """
-    Train all four classifiers from a list of labeled records.
-    Saves each model to models_dir/<task>.joblib.
+    """Train all four classifiers from a list of labeled records.
+
+    When use_registry=True (default), saves each model as a new version under
+    models_dir/<task>/v<N>/model.joblib using the model registry.
+    Falls back to the flat models_dir/<task>.joblib layout when use_registry=False.
     Returns a dict of task_name -> LabeledClassifier.
     """
     out_dir = Path(models_dir) if models_dir else MODELS_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     trained: dict[str, LabeledClassifier] = {}
     for task in _TASK_LABELS:
@@ -109,9 +111,21 @@ def train_all(
 
         texts, labels = zip(*pairs)
         model = train_task(task, list(texts), list(labels))
-        path = out_dir / f"{task}.joblib"
-        joblib.dump(model, path)
-        print(f"[{task}] trained on {len(texts)} examples → {path}")
+
+        if use_registry:
+            from app.ml.model_registry import save_model  # noqa: PLC0415
+            version = save_model(
+                task, model, model_type="sklearn",
+                extra={"n_examples": len(texts)},
+                models_dir=out_dir,
+            )
+            print(f"[{task}] trained on {len(texts)} examples → {out_dir}/{task}/v{version}/")
+        else:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            path = out_dir / f"{task}.joblib"
+            joblib.dump(model, path)
+            print(f"[{task}] trained on {len(texts)} examples → {path}")
+
         trained[task] = model
 
     return trained

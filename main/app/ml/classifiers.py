@@ -93,18 +93,32 @@ def _try_load_setfit() -> bool:
 
 
 def _try_load_trained() -> bool:
-    """Load sklearn joblib models. Returns True if any loaded."""
+    """Load sklearn models. Tries versioned registry first, then flat .joblib files.
+    Returns True if any loaded.
+    """
     global _trained_models, _models_loaded
     if _models_loaded:
         return bool(_trained_models)
     _models_loaded = True
 
+    # --- versioned registry ---
+    try:
+        from app.ml.model_registry import load_all_latest  # noqa: PLC0415
+        for task, (model, _meta) in load_all_latest(model_type="sklearn").items():
+            if task in ALL_TASKS:
+                _trained_models[task] = model
+    except Exception:
+        pass
+
+    # --- flat legacy fallback (models/<task>.joblib) ---
     try:
         import joblib  # noqa: PLC0415
     except ImportError:
-        return False
+        return bool(_trained_models)
 
     for task in ALL_TASKS:
+        if task in _trained_models:
+            continue
         path = MODELS_DIR / f"{task}.joblib"
         if path.exists():
             try:

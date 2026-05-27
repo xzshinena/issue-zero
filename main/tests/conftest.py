@@ -12,12 +12,13 @@ import pytest
 @pytest.fixture
 def sample_issues_jsonl(tmp_path: Path) -> Path:
     """Write 10 labeled issue records to a tmp JSONL file."""
+    actions = ["triage", "assign_to_area", "need_more_info", "duplicate", "close"]
     records = [
         {
             "text_full": f"Issue {i}: crash on startup with null pointer",
             "urgency": "critical_bug" if i % 3 == 0 else "medium",
             "issue_type": "bug" if i % 2 == 0 else "feature_request",
-            "action_recommendation": "triage",
+            "action_recommendation": actions[i % len(actions)],
             "is_regression": i % 4 == 0,
         }
         for i in range(10)

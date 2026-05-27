@@ -61,13 +61,26 @@ def test_train_task_returns_labeled_classifier():
     assert isinstance(model, LabeledClassifier)
 
 
-def test_train_all_creates_joblib_files(tmp_path, sample_issues_jsonl):
+def test_train_all_creates_versioned_dirs(tmp_path, sample_issues_jsonl):
     from app.ml.train.data_loader import load_records
     from app.ml.train.trainer import train_all
 
     records = load_records(sample_issues_jsonl)
     with patch("app.ml.train.trainer.extract_features", side_effect=_fake_extract):
         train_all(records, models_dir=tmp_path)
+
+    for task in ("urgency", "issue_type", "action_recommendation", "is_regression"):
+        assert (tmp_path / task / "v1" / "model.joblib").exists(), f"missing {task}/v1/model.joblib"
+        assert (tmp_path / task / "v1" / "metadata.json").exists(), f"missing {task}/v1/metadata.json"
+
+
+def test_train_all_flat_layout(tmp_path, sample_issues_jsonl):
+    from app.ml.train.data_loader import load_records
+    from app.ml.train.trainer import train_all
+
+    records = load_records(sample_issues_jsonl)
+    with patch("app.ml.train.trainer.extract_features", side_effect=_fake_extract):
+        train_all(records, models_dir=tmp_path, use_registry=False)
 
     created = list(tmp_path.glob("*.joblib"))
     assert len(created) == 4
